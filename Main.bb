@@ -27,7 +27,6 @@ Global OptionFile$ = "options.ini"
 Include "Blitz_Basic_Bank.bb"
 Include "Blitz_File_FileName.bb"
 Include "Blitz_File_ZipApi.bb"
-Include "Update.bb"
 
 Include "DevilParticleSystem.bb"
 
@@ -186,7 +185,7 @@ Global MenuScale# = (GraphicHeight / 1024.0)
 
 SetBuffer(BackBuffer())
 
-Global CurTime%, PrevTime%, LoopDelay%, FPSfactor#, FPSfactor2#, PrevFPSFactor#
+Global CurTime%, PrevTime%, LoopDelay%, FPSfactor#, FPSfactor2#, FPSfactorReal#, Tickset# = -1.0, PrevFPSFactor#
 Local CheckFPS%, ElapsedLoops%, FPS%, ElapsedTime#
 
 Global Framelimit% = GetINIInt(OptionFile, "options", "framelimit")
@@ -208,7 +207,7 @@ Global GameSaved%
 
 Global CanSave% = True
 
-AppTitle "SCP - Containment Breach v"+VersionNumber
+AppTitle "SCP - Containment Breach Debug Mod v"+VersionNumber
 
 PlayStartupVideos()
 
@@ -316,6 +315,8 @@ Global InvertMouse% = GetINIInt(OptionFile, "options", "invert mouse y")
 Global MouseHit1%, MouseDown1%, MouseHit2%, DoubleClick%, LastMouseHit1%, MouseUp1%
 
 Global GodMode%, NoClip%, NoClipSpeed# = 2.0
+Global Debug939%
+Global NoclipCam%
 
 Global CoffinDistance# = 100.0
 
@@ -1456,6 +1457,38 @@ Function UpdateConsole()
 ;					Else
 ;						CreateConsoleMsg(Chr(74)+Chr(32)+Chr(79)+Chr(32)+Chr(82)+Chr(32)+Chr(71)+Chr(32)+Chr(69)+Chr(32)+Chr(32)+Chr(67)+Chr(32)+Chr(65)+Chr(32)+Chr(78)+Chr(32)+Chr(78)+Chr(32)+Chr(79)+Chr(32)+Chr(84)+Chr(32)+Chr(32)+Chr(66)+Chr(32)+Chr(69)+Chr(32)+Chr(32)+Chr(67)+Chr(32)+Chr(79)+Chr(32)+Chr(78)+Chr(32)+Chr(84)+Chr(32)+Chr(65)+Chr(32)+Chr(73)+Chr(32)+Chr(78)+Chr(32)+Chr(69)+Chr(32)+Chr(68)+Chr(46))
 ;					EndIf
+					;[End Block]
+				Case "tick"
+					;[Block]
+					StrTemp = Lower(Right(ConsoleInput, Len(ConsoleInput) - Instr(ConsoleInput, " ")))
+					Tickset = Float(StrTemp)
+
+					CreateConsoleMsg("Tick set to: " + Tickset)
+					;[End Block]
+				Case "noclip-cam"
+					;[Block]
+					NoclipCam = Not NoclipCam
+
+					If NoclipCam
+						CreateConsoleMsg("Camera noclip ON")
+					Else
+						CreateConsoleMsg("Camera noclip OFF")
+					EndIf
+					;[End Block]
+				Case "debug-939"
+					;[Block]
+					Debug939 = Not Debug939
+					If Debug939
+						For i = 0 To 2
+							ShowEntity(I939Indicators[i])
+						Next
+						CreateConsoleMsg("Debug 939 ON")
+					Else
+						For i = 0 To 2
+							HideEntity(I939Indicators[i])
+						Next
+						CreateConsoleMsg("Debug 939 OFF")
+					EndIf
 					;[End Block]
 				Default
 					;[Block]
@@ -2717,6 +2750,7 @@ Global GasMaskTexture%, GasMaskOverlay%
 Global InfectTexture%, InfectOverlay%
 Global DarkTexture%, Dark%
 Global Collider%, Head%
+Global I939Indicators%[3]
 
 Global FogNVTexture%
 Global NVTexture%, NVOverlay%
@@ -2814,9 +2848,16 @@ Repeat
 	ElapsedTime = (CurTime - PrevTime) / 1000.0
 	PrevTime = CurTime
 	PrevFPSFactor = FPSfactor
-	FPSfactor = Max(Min(ElapsedTime * 70, 5.0), 0.2)
-	FPSfactor2 = FPSfactor
-	
+	FPSfactorReal = Max(Min(ElapsedTime * 70, 5.0), 0.2)
+
+	If Tickset = -1.0 Then
+		FPSfactor = FPSfactorReal
+		FPSfactor2 = FPSfactor
+	Else
+		FPSfactor = FPSfactorReal * Tickset / 70.0
+		FPSfactor2 = FPSfactor
+	EndIf
+
 	If MenuOpen Or InvOpen Or OtherOpen<>Null Or ConsoleOpen Or SelectedDoor <> Null Or SelectedScreen <> Null Or Using294 Then FPSfactor = 0
 	
 	If Framelimit > 0 Then
@@ -2997,6 +3038,12 @@ Repeat
 				UpdateDevilEmitters()
 				UpdateParticles_Devil()
 				UpdateParticles_Time#=0
+			EndIf
+
+			If Debug939 Then
+				For i = 0 To 2
+					PositionEntity(I939Indicators[i], EntityX(Collider, True), EntityY(Collider, True) - 0.25, EntityZ(Collider, True))
+				Next
 			EndIf
 		EndIf
 		
@@ -4197,7 +4244,7 @@ Function MovePlayer()
 	
 	Local temp2# = (Speed * Sprint) / (1.0+CrouchState)
 	
-	If NoClip Then 
+	If NoClip Or NoclipCam Then 
 		Shake = 0
 		CurrSpeed = 0
 		CrouchState = 0
@@ -4206,12 +4253,16 @@ Function MovePlayer()
 		RotateEntity Collider, WrapAngle(EntityPitch(Camera)), WrapAngle(EntityYaw(Camera)), 0
 		
 		temp2 = temp2 * NoClipSpeed
+
+		Local moveTarget = Collider
+
+		If NoclipCam Then moveTarget = Camera
 		
-		If KeyDown(KEY_DOWN) Then MoveEntity Collider, 0, 0, -temp2*FPSfactor
-		If KeyDown(KEY_UP) Then MoveEntity Collider, 0, 0, temp2*FPSfactor
+		If KeyDown(KEY_DOWN) Then MoveEntity moveTarget, 0, 0, -temp2*FPSfactorReal
+		If KeyDown(KEY_UP) Then MoveEntity moveTarget, 0, 0, temp2*FPSfactorReal
 		
-		If KeyDown(KEY_LEFT) Then MoveEntity Collider, -temp2*FPSfactor, 0, 0
-		If KeyDown(KEY_RIGHT) Then MoveEntity Collider, temp2*FPSfactor, 0, 0	
+		If KeyDown(KEY_LEFT) Then MoveEntity moveTarget, -temp2*FPSfactorReal, 0, 0
+		If KeyDown(KEY_RIGHT) Then MoveEntity moveTarget, temp2*FPSfactorReal, 0, 0	
 		
 		ResetEntity Collider
 	Else
@@ -4397,15 +4448,17 @@ Function MouseLook()
 		
 		;käännetään kameraa sivulle jos pelaaja on vammautunut
 		;RotateEntity Collider, EntityPitch(Collider), EntityYaw(Collider), Max(Min(up*30*Injuries,50),-50)
-		PositionEntity Camera, EntityX(Collider), EntityY(Collider), EntityZ(Collider)
-		RotateEntity Camera, 0, EntityYaw(Collider), roll*0.5
-		
-		MoveEntity Camera, side, up + 0.6 + CrouchState * -0.3, 0
+
+		If Not NoclipCam
+			PositionEntity Camera, EntityX(Collider), EntityY(Collider), EntityZ(Collider)
+			RotateEntity Camera, 0, EntityYaw(Collider), roll*0.5
+			MoveEntity Camera, side, up + 0.6 + CrouchState * -0.3, 0
+		EndIf
 		
 		;RotateEntity Collider, EntityPitch(Collider), EntityYaw(Collider), 0
 		;moveentity player, side, up, 0	
 		; -- Update the smoothing que To smooth the movement of the mouse.
-		mouse_x_speed_1# = CurveValue(MouseXSpeed() * (MouseSens + 0.6) , mouse_x_speed_1, (6.0 / (MouseSens + 1.0))*MouseSmooth) 
+		mouse_x_speed_1# = CurveValueReal(MouseXSpeed() * (MouseSens + 0.6) , mouse_x_speed_1, (6.0 / (MouseSens + 1.0))*MouseSmooth) 
 		If Int(mouse_x_speed_1) = Int(Nan1) Then mouse_x_speed_1 = 0
 		If PrevFPSFactor>0 Then
             If Abs(FPSfactor/PrevFPSFactor-1.0)>1.0 Then
@@ -4415,9 +4468,9 @@ Function MouseLook()
             EndIf
         EndIf
 		If InvertMouse Then
-			mouse_y_speed_1# = CurveValue(-MouseYSpeed() * (MouseSens + 0.6), mouse_y_speed_1, (6.0/(MouseSens+1.0))*MouseSmooth) 
+			mouse_y_speed_1# = CurveValueReal(-MouseYSpeed() * (MouseSens + 0.6), mouse_y_speed_1, (6.0/(MouseSens+1.0))*MouseSmooth) 
 		Else
-			mouse_y_speed_1# = CurveValue(MouseYSpeed () * (MouseSens + 0.6), mouse_y_speed_1, (6.0/(MouseSens+1.0))*MouseSmooth) 
+			mouse_y_speed_1# = CurveValueReal(MouseYSpeed () * (MouseSens + 0.6), mouse_y_speed_1, (6.0/(MouseSens+1.0))*MouseSmooth) 
 		EndIf
 		If Int(mouse_y_speed_1) = Int(Nan1) Then mouse_y_speed_1 = 0
 		
@@ -4465,9 +4518,9 @@ Function MouseLook()
 		EndIf
 		
 		If InvertMouse Then
-			TurnEntity (Camera, -MouseYSpeed() * 0.05 * FPSfactor, -MouseXSpeed() * 0.15 * FPSfactor, 0)
+			TurnEntity (Camera, -MouseYSpeed() * 0.05 * FPSfactorReal, -MouseXSpeed() * 0.15 * FPSfactorReal, 0)
 		Else
-			TurnEntity (Camera, MouseYSpeed() * 0.05 * FPSfactor, -MouseXSpeed() * 0.15 * FPSfactor, 0)
+			TurnEntity (Camera, MouseYSpeed() * 0.05 * FPSfactorReal, -MouseXSpeed() * 0.15 * FPSfactorReal, 0)
 		End If
 		
 	EndIf
@@ -4863,7 +4916,7 @@ Function DrawGUI()
 			Else
 				AAText x + 350, 310, "Current monitor: NULL"
 			EndIf
-			
+
 			AASetFont Font1
 		EndIf
 		
@@ -7972,7 +8025,21 @@ Function LoadEntities()
 	EntityRadius Head, 0.15
 	EntityType Head, HIT_PLAYER
 	
-	
+	For i = 0 To 2
+		I939Indicators[i] = CreateCylinder(64, False)
+		EntityFX(I939Indicators[i], 1 + 4 + 8 + 16)
+		HideEntity(I939Indicators[i])
+	Next
+
+	EntityColor(I939Indicators[0], 255, 0, 0)
+	ScaleEntity(I939Indicators[0], 2.5, 0.005, 2.5)
+
+	EntityColor(I939Indicators[1], 0, 0, 255)
+	ScaleEntity(I939Indicators[1], 4.0, 0.005, 4.0)
+
+	EntityColor(I939Indicators[2], 0, 255, 0)
+	ScaleEntity(I939Indicators[2], 4.8, 0.005, 4.8)
+
 	LiquidObj = LoadMesh_Strict("GFX\items\cupliquid.x") ;optimized the cups dispensed by 294
 	HideEntity LiquidObj
 	
@@ -10602,6 +10669,16 @@ Function CurveValue#(number#, old#, smooth#)
 		Return Max(old + (number - old) * (1.0 / smooth * FPSfactor), number)
 	Else
 		Return Min(old + (number - old) * (1.0 / smooth * FPSfactor), number)
+	EndIf
+End Function
+
+Function CurveValueReal#(number#, old#, smooth#)
+	If FPSfactorReal = 0 Then Return old
+	
+	If number < old Then
+		Return Max(old + (number - old) * (1.0 / smooth * FPSfactorReal), number)
+	Else
+		Return Min(old + (number - old) * (1.0 / smooth * FPSfactorReal), number)
 	EndIf
 End Function
 
