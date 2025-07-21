@@ -265,6 +265,13 @@ Global KEY_CROUCH = GetINIInt(OptionFile, "binds", "Crouch key")
 Global KEY_SAVE = GetINIInt(OptionFile, "binds", "Save key")
 Global KEY_CONSOLE = GetINIInt(OptionFile, "binds", "Console key")
 
+Type KeyBind
+	Field KeyCode%
+	Field Command$
+End Type
+
+Global ForceProcessCommand%
+
 Global MouseSmooth# = GetINIFloat(OptionFile,"options", "mouse smoothing", 1.0)
 
 Const INFINITY# = (999.0) ^ (99999.0), NAN# = (-1.0) ^ (0.5)
@@ -566,7 +573,37 @@ Function UpdateConsole()
 		EndIf
 		ConsoleInput = Left(ConsoleInput, 100)
 		
-		If KeyHit(28) And ConsoleInput <> "" Then
+		Local TempY% = y + height - 25*MenuScale - ConsoleScroll
+		Local count% = 0
+		For cm.ConsoleMsg = Each ConsoleMsg
+			count = count+1
+			If count>1000 Then
+				Delete cm
+			Else
+				If TempY >= y And TempY < y + height - 20*MenuScale Then
+					If cm=ConsoleReissue Then
+						Color cm\r/4,cm\g/4,cm\b/4
+						Rect x,TempY-2*MenuScale,width-30*MenuScale,24*MenuScale,True
+					EndIf
+					Color cm\r,cm\g,cm\b
+					If cm\isCommand Then
+						AAText(x + 20*MenuScale, TempY, "> "+cm\txt)
+					Else
+						AAText(x + 20*MenuScale, TempY, cm\txt)
+					EndIf
+				EndIf
+				TempY = TempY - 15*MenuScale
+			EndIf
+			
+		Next
+		
+		Color 255,255,255
+		
+		If Fullscreen Then DrawImage CursorIMG, ScaledMouseX(),ScaledMouseY()
+	End If
+
+	If (KeyHit(28) Or ForceProcessCommand) And ConsoleInput <> "" Then
+			ForceProcessCommand = False
 			ConsoleReissue = Null
 			ConsoleScroll = 0
 			CreateConsoleMsg(ConsoleInput,255,255,0,True)
@@ -1490,6 +1527,29 @@ Function UpdateConsole()
 						CreateConsoleMsg("Debug 939 OFF")
 					EndIf
 					;[End Block]
+				Case "bind"
+					;[Block]
+					args = Lower(Right(ConsoleInput, Len(ConsoleInput) - Instr(ConsoleInput, " ")))
+					StrTemp = Piece(args,1," ")
+					StrTemp2 = Right(args, Len(args) - Instr(args, " "))
+
+					Local bind.KeyBind = New KeyBind
+					bind\KeyCode = Int(StrTemp)
+					bind\Command = StrTemp2
+					
+					CreateConsoleMsg("Bind command " + StrTemp2 + " to key " + bind\KeyCode)
+					CreateConsoleMsg("Using 'unbind " + bind\KeyCode + "' to remove this bind.")
+					;[End Block]
+				Case "unbind"
+					;[Block]
+					temp = Int(Right(ConsoleInput, Len(ConsoleInput) - Instr(ConsoleInput, " ")))
+
+					For bind.KeyBind = Each KeyBind
+						If bind\KeyCode = temp Then
+							Delete bind
+						EndIf
+					Next
+					;[End Block]
 				Default
 					;[Block]
 					CreateConsoleMsg("Command not found.",255,0,0)
@@ -1498,35 +1558,6 @@ Function UpdateConsole()
 			
 			ConsoleInput = ""
 		End If
-		
-		Local TempY% = y + height - 25*MenuScale - ConsoleScroll
-		Local count% = 0
-		For cm.ConsoleMsg = Each ConsoleMsg
-			count = count+1
-			If count>1000 Then
-				Delete cm
-			Else
-				If TempY >= y And TempY < y + height - 20*MenuScale Then
-					If cm=ConsoleReissue Then
-						Color cm\r/4,cm\g/4,cm\b/4
-						Rect x,TempY-2*MenuScale,width-30*MenuScale,24*MenuScale,True
-					EndIf
-					Color cm\r,cm\g,cm\b
-					If cm\isCommand Then
-						AAText(x + 20*MenuScale, TempY, "> "+cm\txt)
-					Else
-						AAText(x + 20*MenuScale, TempY, cm\txt)
-					EndIf
-				EndIf
-				TempY = TempY - 15*MenuScale
-			EndIf
-			
-		Next
-		
-		Color 255,255,255
-		
-		If Fullscreen Then DrawImage CursorIMG, ScaledMouseX(),ScaledMouseY()
-	End If
 	
 	AASetFont Font1
 	
@@ -4088,6 +4119,13 @@ End Function
 Function MovePlayer()
 	CatchErrors("Uncaught (MovePlayer)")
 	Local Sprint# = 1.0, Speed# = 0.018, i%, angle#
+
+	For bind.KeyBind = Each KeyBind
+		If KeyHit(bind\KeyCode)
+			ForceProcessCommand = True
+			ConsoleInput = bind\Command
+		EndIf
+	Next
 	
 	If SuperMan Then
 		Speed = Speed * 3
@@ -4171,7 +4209,7 @@ Function MovePlayer()
 		CrouchState = CurveValue(Crouch, CrouchState, 10.0)
 	EndIf
 	
-	If (Not NoClip) Then 
+	If (Not NoClip) And (Not NoclipCam) Then 
 		If ((KeyDown(KEY_DOWN) Or KeyDown(KEY_UP)) Or (KeyDown(KEY_RIGHT) Or KeyDown(KEY_LEFT)) And Playable) Or ForceMove>0 Then
 			
 			If Crouch = 0 And (KeyDown(KEY_SPRINT)) And Stamina > 0.0 And (Not IsZombie) Then
